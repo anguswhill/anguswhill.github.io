@@ -462,11 +462,7 @@ transition: opacity 0.15s;
       <button class="act" id="actRun">RUN</button>
     </div>
   </div>
-  <div class="lab-panel" id="labPanel">
-    <h3 style="font-family: 'Press Start 2P', monospace; font-size: 10px; margin-bottom: 10px; color: #2a6f9a;">CRITTER LAB</h3>
-    <div style="font-size:18px; line-height:1.2; margin-bottom:10px;">A calm space to regroup. No wild encounters here.</div>
-    <button class="act" id="exitLab">EXIT LAB</button>
-  </div>
+  <button class="dexbtn" id="openLab">🧬 OPEN BIO LAB</button>
 
 <button class="dexbtn" id="openDex">📖 OPEN CRITTERDEX <span class="count" id="dexCount">(0/7)</span></button>
 
@@ -492,6 +488,18 @@ transition: opacity 0.15s;
     <div class="modal-body">
       <div class="dex-progress">CAUGHT: <span class="gold" id="dexProgress">0 / 7</span></div>
       <div class="dex-grid" id="dexGrid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="labModal">
+  <div class="modal-inner">
+    <div class="modal-head">
+      <span>◆ CRITTER LAB ◆</span>
+      <button class="modal-close" id="closeLab">CLOSE</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:18px; line-height:1.2; margin-bottom:10px;">A calm space to regroup. No wild encounters here.</div>
       <div class="storage-head">
         <span>◆ BIO LAB STORAGE ◆</span>
         <span id="storageCount">0 STORED</span>
@@ -531,6 +539,7 @@ const R = 3; // rock
 const S = 4; // sand path
 const F = 5; // flower
 const L = 6; // lab
+const LAB_TILE = L;
 
 // Hand-built map
 const MAP = [
@@ -921,7 +930,7 @@ function isWalkable(x, y) {
 }
 
 function tryMove(dx, dy) {
-  if (inBattle || labOpen) return;
+  if (inBattle) return;
   const nx = player.x + dx, ny = player.y + dy;
   if (dx === -1) player.dir = 'left';
   if (dx === 1)  player.dir = 'right';
@@ -942,12 +951,9 @@ function tryMove(dx, dy) {
   }
 
   render();
-  if (MAP[ny][nx] === L) {
-    openLab();
-    return;
-  }
+  updateLabAccess();
   // encounter check
-  if (MAP[ny][nx] === T && Math.random() < 0.28) {
+  if (MAP[ny][nx] === T && !isInLabZone() && Math.random() < 0.28) {
     setTimeout(startEncounter, 200);
   }
 }
@@ -1120,16 +1126,30 @@ function setMsg(text) {
 }
 
 function openLab() {
+  if (!isInLabZone()) return;
   labOpen = true;
-  document.getElementById('labPanel').classList.add('active');
+  document.getElementById('labModal').classList.add('open');
+  buildStorageGrid();
   setMsg('You entered the lab. Wild critters are kept outside.');
 }
 
 function closeLab() {
   labOpen = false;
-  document.getElementById('labPanel').classList.remove('active');
+  document.getElementById('labModal').classList.remove('open');
   setMsg('You exited the lab. Back to exploring!');
   render();
+}
+
+function isInLabZone() {
+  return MAP[player.y] && MAP[player.y][player.x] === LAB_TILE;
+}
+
+function updateLabAccess() {
+  const openLabBtn = document.getElementById('openLab');
+  if (!openLabBtn) return;
+  const inLabZone = isInLabZone();
+  openLabBtn.style.display = inLabZone ? 'inline-flex' : 'none';
+  if (!inLabZone && labOpen) closeLab();
 }
 
 function updateBalls() { document.getElementById('balls').textContent = balls; }
@@ -1294,9 +1314,19 @@ if (dexModal) {
   });
 }
 
-const labExitBtn = document.getElementById('exitLab');
-if (labExitBtn) {
-  labExitBtn.addEventListener('click', closeLab);
+const openLabBtn = document.getElementById('openLab');
+const labModal = document.getElementById('labModal');
+const closeLabBtn = document.getElementById('closeLab');
+if (openLabBtn) {
+  openLabBtn.addEventListener('click', openLab);
+}
+if (closeLabBtn) {
+  closeLabBtn.addEventListener('click', closeLab);
+}
+if (labModal) {
+  labModal.addEventListener('click', e => {
+    if (e.target === labModal) closeLab();
+  });
 }
 
 // catch formula: lower HP + bait/rock bonus + rarity penalty
@@ -1386,6 +1416,7 @@ updateParts();
 updateDex();
 buildStorageGrid();
 render();
+updateLabAccess();
 
 // keep the ball bob animated when not in battle
 setInterval(() => { if (!inBattle) render(); }, 200);
