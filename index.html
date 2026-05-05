@@ -498,9 +498,11 @@ transition: opacity 0.15s;
 
   <div class="audio-controls">
     <button class="audio-btn" id="audioToggle" aria-label="Toggle audio">🔊 SOUND ON</button>
+    <button class="audio-btn" id="audioTest" aria-label="Play test beep">TEST BEEP</button>
     <input class="audio-slider" id="audioVolume" type="range" min="0" max="100" step="1" value="70" aria-label="Audio volume" />
     <span class="audio-label" id="audioPct">70%</span>
   </div>
+  <div id="audioDebug" style="margin-top:6px;font-size:14px;opacity:.85;">AUDIO: idle</div>
 
 
   <div class="battle" id="battle">
@@ -653,6 +655,8 @@ const audioState = { ctx: null, masterGain: null, musicGain: null, sfxGain: null
 const audioToggleBtn = document.getElementById('audioToggle');
 const audioVolumeInput = document.getElementById('audioVolume');
 const audioPct = document.getElementById('audioPct');
+const audioTestBtn = document.getElementById('audioTest');
+const audioDebugEl = document.getElementById('audioDebug');
 
 function ensureAudio() {
   if (!audioState.ctx) {
@@ -738,10 +742,19 @@ function playCritterNoise(){
 }
 
 
+function updateAudioDebug(extra='') {
+  if (!audioDebugEl) return;
+  const ctxState = audioState.ctx ? audioState.ctx.state : 'none';
+  const muted = audioState.muted ? 'yes' : 'no';
+  const vol = Math.round(audioState.volume * 100);
+  audioDebugEl.textContent = `AUDIO: ctx=${ctxState} muted=${muted} vol=${vol}%${extra ? ' • ' + extra : ''}`;
+}
+
 function applyAudioUi() {
   const muted = audioState.muted || audioState.volume <= 0;
   audioToggleBtn.textContent = muted ? '🔇 SOUND OFF' : '🔊 SOUND ON';
   audioPct.textContent = `${Math.round(audioState.volume * 100)}%`;
+  updateAudioDebug();
 }
 
 function setVolume(raw) {
@@ -783,6 +796,14 @@ function initAudioPrefs() {
       return;
     }
     setMuted(true);
+  });
+
+  audioTestBtn.addEventListener('click', () => {
+    ensureAudio();
+    setMuted(false);
+    playClick();
+    setTimeout(() => tone(440, 0.12, 'triangle', 0.05), 30);
+    updateAudioDebug('test beep');
   });
 
   bindAudioUnlock();
