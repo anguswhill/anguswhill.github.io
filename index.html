@@ -133,6 +133,15 @@ border: 3px solid var(–ink);
 padding: 12px;
 }
 .battle.active { display: block; }
+.lab-panel {
+display: none;
+margin-top: 10px;
+background: var(–cream);
+color: var(–ink);
+border: 3px solid var(–ink);
+padding: 12px;
+}
+.lab-panel.active { display: block; }
 .battle h3 {
 font-family: ‘Press Start 2P’, monospace;
 font-size: 10px;
@@ -402,6 +411,11 @@ transition: opacity 0.15s;
       <button class="act" id="actRun">RUN</button>
     </div>
   </div>
+  <div class="lab-panel" id="labPanel">
+    <h3 style="font-family: 'Press Start 2P', monospace; font-size: 10px; margin-bottom: 10px; color: #2a6f9a;">CRITTER LAB</h3>
+    <div style="font-size:18px; line-height:1.2; margin-bottom:10px;">A calm space to regroup. No wild encounters here.</div>
+    <button class="act" id="exitLab">EXIT LAB</button>
+  </div>
 
 <button class="dexbtn" id="openDex">📖 OPEN CRITTERDEX <span class="count" id="dexCount">(0/7)</span></button>
 
@@ -460,6 +474,7 @@ const W = 2; // water
 const R = 3; // rock
 const S = 4; // sand path
 const F = 5; // flower
+const L = 6; // lab
 
 // Hand-built map
 const MAP = [
@@ -471,7 +486,7 @@ const MAP = [
   [G,S,G,W,W,W,S,G,T,T],
   [G,S,G,G,G,G,S,G,T,T],
   [G,F,G,T,T,G,S,S,S,G],
-  [R,G,G,T,T,G,G,F,S,G],
+  [R,G,G,T,T,G,L,L,S,G],
   [R,R,G,G,G,G,G,G,S,G],
 ];
 
@@ -495,6 +510,7 @@ let wildHP = 0;
 let wildHPMax = 0;
 let catchBonus = 0; // baiting/rocks modify this
 let inBattle = false;
+let labOpen = false;
 const caught = new Set();
 let balls = 10;
 
@@ -586,6 +602,16 @@ function drawTile(t, x, y) {
     ctx.fillRect(px+6, py+6, 4, 4);
     ctx.fillStyle = '#ffcb47';
     ctx.fillRect(px+7, py+7, 2, 2);
+  } else if (t === L) {
+    ctx.fillStyle = '#d7dce8';
+    ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#404a64';
+    ctx.fillRect(px, py, TILE, 3);
+    ctx.fillStyle = '#88b6ff';
+    ctx.fillRect(px+2, py+5, 4, 4);
+    ctx.fillRect(px+10, py+5, 4, 4);
+    ctx.fillStyle = '#6d3e2a';
+    ctx.fillRect(px+6, py+9, 4, 7);
   }
 }
 
@@ -788,7 +814,7 @@ function isWalkable(x, y) {
 }
 
 function tryMove(dx, dy) {
-  if (inBattle) return;
+  if (inBattle || labOpen) return;
   const nx = player.x + dx, ny = player.y + dy;
   if (dx === -1) player.dir = 'left';
   if (dx === 1)  player.dir = 'right';
@@ -809,6 +835,10 @@ function tryMove(dx, dy) {
   }
 
   render();
+  if (MAP[ny][nx] === L) {
+    openLab();
+    return;
+  }
   // encounter check
   if (MAP[ny][nx] === T && Math.random() < 0.28) {
     setTimeout(startEncounter, 200);
@@ -892,6 +922,19 @@ function setMsg(text) {
   document.getElementById('msg').textContent = text;
 }
 
+function openLab() {
+  labOpen = true;
+  document.getElementById('labPanel').classList.add('active');
+  setMsg('You entered the lab. Wild critters are kept outside.');
+}
+
+function closeLab() {
+  labOpen = false;
+  document.getElementById('labPanel').classList.remove('active');
+  setMsg('You exited the lab. Back to exploring!');
+  render();
+}
+
 function updateBalls() { document.getElementById('balls').textContent = balls; }
 function updateCaught() { document.getElementById('caught').textContent = caught.size; }
 
@@ -972,6 +1015,11 @@ if (dexModal) {
   dexModal.addEventListener('click', e => {
     if (e.target === dexModal) dexModal.classList.remove('open');
   });
+}
+
+const labExitBtn = document.getElementById('exitLab');
+if (labExitBtn) {
+  labExitBtn.addEventListener('click', closeLab);
 }
 
 // catch formula: lower HP + bait/rock bonus + rarity penalty
