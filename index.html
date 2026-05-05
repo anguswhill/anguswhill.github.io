@@ -362,6 +362,48 @@ white-space: nowrap;
 }
 .dex-card.uncaught .rarity { color: rgba(255, 245, 220, 0.4); }
 
+.storage-head {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin: 14px 0 8px;
+font-family: 'Press Start 2P', monospace;
+font-size: 8px;
+letter-spacing: 1px;
+color: var(--accent);
+}
+.storage-grid {
+display: grid;
+grid-template-columns: 1fr;
+gap: 8px;
+}
+.storage-card {
+display: grid;
+grid-template-columns: 48px 1fr auto;
+gap: 8px;
+align-items: center;
+padding: 8px;
+border: 2px solid var(--ink);
+background: rgba(34,31,28,0.08);
+}
+.storage-card.selected {
+border-color: var(--accent);
+box-shadow: 0 0 0 2px rgba(255,90,60,0.25) inset;
+}
+.storage-card canvas { width: 48px; height: 48px; border: 2px solid var(--ink); background: rgba(255,255,255,0.35); }
+.storage-meta { min-width: 0; }
+.storage-name { font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--ink); }
+.storage-id { font-size: 16px; color: rgba(34,31,28,0.7); }
+.storage-status {
+font-family: 'Press Start 2P', monospace;
+font-size: 8px;
+padding: 6px 8px;
+border: 2px solid var(--ink);
+background: var(--cream);
+cursor: pointer;
+}
+.storage-empty { font-size: 20px; opacity: 0.8; }
+
 /* Catch animation overlay */
 .flash {
 position: absolute;
@@ -427,6 +469,11 @@ transition: opacity 0.15s;
     <div class="modal-body">
       <div class="dex-progress">CAUGHT: <span class="gold" id="dexProgress">0 / 7</span></div>
       <div class="dex-grid" id="dexGrid"></div>
+      <div class="storage-head">
+        <span>◆ BIO LAB STORAGE ◆</span>
+        <span id="storageCount">0 STORED</span>
+      </div>
+      <div class="storage-grid" id="storageGrid"></div>
     </div>
   </div>
 </div>
@@ -496,7 +543,58 @@ let wildHPMax = 0;
 let catchBonus = 0; // baiting/rocks modify this
 let inBattle = false;
 const caught = new Set();
+let storedCritters = [];
+let selectedCritterId = null;
 let balls = 10;
+const DEFAULT_PARTS = { biomatter: 0, shell: 0, spark: 0, gloom: 0 };
+let parts = { ...DEFAULT_PARTS };
+
+function saveProgress() {
+  localStorage.setItem('cq_caught', JSON.stringify(Array.from(caught)));
+  localStorage.setItem('cq_storedCritters', JSON.stringify(storedCritters));
+  localStorage.setItem('cq_parts', JSON.stringify(parts));
+}
+
+function loadProgress() {
+  try {
+    const savedCaught = JSON.parse(localStorage.getItem('cq_caught') || '[]');
+    if (Array.isArray(savedCaught)) savedCaught.forEach(name => caught.add(name));
+
+    const savedStored = JSON.parse(localStorage.getItem('cq_storedCritters') || '[]');
+    if (Array.isArray(savedStored)) {
+      storedCritters = savedStored
+        .filter(c => c && c.id && c.species && c.spriteData)
+        .map(c => ({
+          id: c.id,
+          species: c.species,
+          spriteData: c.spriteData,
+          stats: c.stats && typeof c.stats === 'object' ? c.stats : {},
+          partsUsed: Array.isArray(c.partsUsed) ? c.partsUsed : []
+        }));
+    }
+
+    const savedPartsRaw = localStorage.getItem('cq_parts');
+    const savedParts = JSON.parse(savedPartsRaw || '{}');
+    if (savedParts && typeof savedParts === 'object' && !Array.isArray(savedParts)) {
+      parts = { ...DEFAULT_PARTS, ...savedParts };
+    } else if (Array.isArray(savedParts)) {
+      // Back-compat for older saves that stored parts as an array.
+      parts = { ...DEFAULT_PARTS };
+      for (const key of savedParts) {
+        if (typeof key === 'string') parts[key] = (parts[key] || 0) + 1;
+      }
+    }
+
+    if (storedCritters.length > 0) {
+      selectedCritterId = storedCritters[0].id;
+    }
+  } catch (err) {
+    console.warn('Failed to load save data:', err);
+    storedCritters = [];
+    parts = { ...DEFAULT_PARTS };
+    selectedCritterId = null;
+  }
+}
 
 // Ball pickups scattered on the map. Each respawns ~30s after collection.
 const PICKUP_SPOTS = [
@@ -882,7 +980,18 @@ function endBattle(catchSuccess) {
   document.getElementById('battle').classList.remove('active');
   if (catchSuccess) {
     caught.add(wild.name);
+    const instance = {
+      id: `crt_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+      species: wild.name,
+      spriteData: getSprite(wild.name).toDataURL(),
+      stats: { rarity: wild.rarity, caughtAt: new Date().toISOString() },
+      partsUsed: []
+    };
+    storedCritters.push(instance);
+    selectedCritterId = instance.id;
+    saveProgress();
     updateDex();
+    buildStorageGrid();
   }
   wild = null;
   render();
@@ -950,6 +1059,58 @@ function buildDexGrid() {
   }
 }
 
+function buildStorageGrid() {
+  const grid = document.getElementById('storageGrid');
+  const count = document.getElementById('storageCount');
+  if (!grid || !count) return;
+  count.textContent = `${storedCritters.length} STORED`;
+  grid.innerHTML = '';
+  if (storedCritters.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'storage-empty';
+    empty.textContent = 'No critters stored yet.';
+    grid.appendChild(empty);
+    return;
+  }
+
+  for (const critter of storedCritters) {
+    const card = document.createElement('div');
+    card.className = 'storage-card' + (critter.id === selectedCritterId ? ' selected' : '');
+
+    const sp = document.createElement('canvas');
+    sp.width = 32; sp.height = 32;
+    const sctx = sp.getContext('2d');
+    const img = new Image();
+    img.onload = () => sctx && sctx.drawImage(img, 0, 0, 32, 32);
+    img.src = critter.spriteData;
+
+    const meta = document.createElement('div');
+    meta.className = 'storage-meta';
+    const name = document.createElement('div');
+    name.className = 'storage-name';
+    name.textContent = critter.species;
+    const id = document.createElement('div');
+    id.className = 'storage-id';
+    id.textContent = critter.id;
+    meta.appendChild(name);
+    meta.appendChild(id);
+
+    const btn = document.createElement('button');
+    btn.className = 'storage-status';
+    btn.textContent = critter.id === selectedCritterId ? 'EDITING' : 'EDIT';
+    btn.addEventListener('click', () => {
+      selectedCritterId = critter.id;
+      buildStorageGrid();
+      saveProgress();
+    });
+
+    card.appendChild(sp);
+    card.appendChild(meta);
+    card.appendChild(btn);
+    grid.appendChild(card);
+  }
+}
+
 // open / close dex modal
 const dexModal = document.getElementById('dexModal');
 const openDexBtn = document.getElementById('openDex');
@@ -959,6 +1120,7 @@ if (openDexBtn) {
     try {
       updateDex();
       buildDexGrid();
+      buildStorageGrid();
       dexModal.classList.add('open');
     } catch (err) {
       alert('Dex error: ' + err.message);
@@ -1050,9 +1212,11 @@ function flash() {
 }
 
 // init
+loadProgress();
 updateBalls();
 updateCaught();
 updateDex();
+buildStorageGrid();
 render();
 
 // keep the ball bob animated when not in battle
