@@ -31,6 +31,7 @@
     overflow: hidden;
     -webkit-font-smoothing: none;
     image-rendering: pixelated;
+touch-action: none;
   }
   body {
     display: flex;
@@ -78,6 +79,7 @@ aspect-ratio: 1 / 1;
 background: var(–grass);
 border: 3px solid var(–ink);
 image-rendering: pixelated;
+touch-action: none;
 }
 
 .hud {
@@ -202,7 +204,7 @@ gap: 4px;
 justify-content: center;
 user-select: none;
 -webkit-user-select: none;
-touch-action: manipulation;
+touch-action: none;
 }
 .dpad button {
 background: var(–ink);
@@ -345,6 +347,7 @@ border-color: rgba(255, 245, 220, 0.2);
 width: 64px;
 height: 64px;
 image-rendering: pixelated;
+touch-action: none;
 background: rgba(0, 0, 0, 0.08);
 border: 2px solid var(–ink);
 }
@@ -430,7 +433,7 @@ transition: opacity 0.15s;
     <button class="down"  id="btnDown">▼</button>
   </div>
 
-  <div class="controls-help">TAP D-PAD OR USE ARROWS / WASD</div>
+  <div class="controls-help">HOLD D-PAD TO MOVE • SWIPE MAP • OR USE ARROWS / WASD</div>
 </div>
 
 <!-- Pokédex modal -->
@@ -849,7 +852,12 @@ function tryMove(dx, dy) {
   }
 }
 
+function canProcessMovementInput() {
+  return !inBattle;
+}
+
 document.addEventListener('keydown', e => {
+  if (!canProcessMovementInput()) return;
   const k = e.key.toLowerCase();
   if (k === 'arrowup' || k === 'w')    { e.preventDefault(); tryMove(0,-1); }
   if (k === 'arrowdown' || k === 's')  { e.preventDefault(); tryMove(0, 1); }
@@ -857,19 +865,93 @@ document.addEventListener('keydown', e => {
   if (k === 'arrowright' || k === 'd') { e.preventDefault(); tryMove( 1,0); }
 });
 
-// Touch D-pad — click works on both mobile taps and desktop clicks
+let activeMoveTimer = null;
+const MOVE_REPEAT_MS = 150;
+
+function clearActiveMoveTimer() {
+  if (activeMoveTimer !== null) {
+    clearInterval(activeMoveTimer);
+    activeMoveTimer = null;
+  }
+}
+
+function startMoveRepeat(dx, dy) {
+  clearActiveMoveTimer();
+  if (!canProcessMovementInput()) return;
+  tryMove(dx, dy);
+  activeMoveTimer = setInterval(() => {
+    if (!canProcessMovementInput()) {
+      clearActiveMoveTimer();
+      return;
+    }
+    tryMove(dx, dy);
+  }, MOVE_REPEAT_MS);
+}
+
 function bindDpad(id, dx, dy) {
   const btn = document.getElementById(id);
   if (!btn) { console.error('Button not found:', id); return; }
-  btn.addEventListener('click', e => {
+
+  const onPress = e => {
     e.preventDefault();
-    tryMove(dx, dy);
-  });
+    startMoveRepeat(dx, dy);
+  };
+  const onRelease = () => clearActiveMoveTimer();
+
+  btn.addEventListener('pointerdown', onPress);
+  btn.addEventListener('pointerup', onRelease);
+  btn.addEventListener('pointercancel', onRelease);
+  btn.addEventListener('pointerleave', onRelease);
+  btn.addEventListener('touchstart', onPress, { passive: false });
+  btn.addEventListener('touchend', onRelease);
+  btn.addEventListener('touchcancel', onRelease);
 }
 bindDpad('btnUp',    0, -1);
 bindDpad('btnDown',  0,  1);
 bindDpad('btnLeft', -1,  0);
 bindDpad('btnRight', 1,  0);
+window.addEventListener('blur', clearActiveMoveTimer);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearActiveMoveTimer();
+});
+
+const SWIPE_THRESHOLD = 24;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchTracking = false;
+const gameCanvas = document.getElementById('game');
+if (gameCanvas) {
+  gameCanvas.addEventListener('touchstart', e => {
+    if (!e.changedTouches || e.changedTouches.length === 0) return;
+    const t = e.changedTouches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    touchTracking = true;
+  }, { passive: true });
+
+  gameCanvas.addEventListener('touchend', e => {
+    if (!touchTracking || !e.changedTouches || e.changedTouches.length === 0) return;
+    touchTracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < SWIPE_THRESHOLD && absY < SWIPE_THRESHOLD) return;
+    if (!canProcessMovementInput()) return;
+    e.preventDefault();
+
+    if (absX > absY) {
+      tryMove(dx > 0 ? 1 : -1, 0);
+    } else {
+      tryMove(0, dy > 0 ? 1 : -1);
+    }
+  }, { passive: false });
+
+  gameCanvas.addEventListener('touchcancel', () => {
+    touchTracking = false;
+  });
+}
 
 // ============================================================
 // ENCOUNTERS / BATTLE
