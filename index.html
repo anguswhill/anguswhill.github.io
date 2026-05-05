@@ -649,7 +649,7 @@ let balls = 10;
 const DEFAULT_PARTS = { biomatter: 0, shell: 0, spark: 0, gloom: 0 };
 let parts = { ...DEFAULT_PARTS };
 
-const audioState = { ctx: null, masterGain: null, musicGain: null, sfxGain: null, started: false, muted: false, volume: 0.7, lastStepAt: 0, lastCritterAt: 0 };
+const audioState = { ctx: null, masterGain: null, musicGain: null, sfxGain: null, started: false, muted: false, volume: 0.7, lastStepAt: 0, lastCritterAt: 0, unlockBound: false };
 const audioToggleBtn = document.getElementById('audioToggle');
 const audioVolumeInput = document.getElementById('audioVolume');
 const audioPct = document.getElementById('audioPct');
@@ -669,12 +669,21 @@ function ensureAudio() {
     audioState.sfxGain.connect(audioState.masterGain);
     audioState.masterGain.connect(audioState.ctx.destination);
   }
-  if (audioState.ctx.state === 'suspended') audioState.ctx.resume();
+  if (audioState.ctx.state === 'suspended') audioState.ctx.resume().catch(() => {});
   if (!audioState.started) {
     audioState.started = true;
     startBgm();
   }
   return audioState.ctx;
+}
+
+function bindAudioUnlock() {
+  if (audioState.unlockBound) return;
+  const unlock = () => { ensureAudio(); };
+  ['pointerdown','touchstart','keydown'].forEach(evt => {
+    window.addEventListener(evt, unlock, { passive: true });
+  });
+  audioState.unlockBound = true;
 }
 
 function tone(freq=440,dur=0.12,type='square',vol=0.06,target='sfx'){
@@ -765,14 +774,19 @@ function initAudioPrefs() {
   });
 
   audioToggleBtn.addEventListener('click', () => {
+    const wasRunning = !!audioState.ctx && audioState.ctx.state === 'running';
     ensureAudio();
-    setMuted(!audioState.muted);
+    if (!wasRunning || audioState.muted || audioState.volume <= 0) {
+      if (audioState.volume <= 0) setVolume(0.7);
+      setMuted(false);
+      playClick();
+      return;
+    }
+    setMuted(true);
   });
-}
 
-['pointerdown','touchstart','keydown'].forEach(evt => {
-  window.addEventListener(evt, ensureAudio, { passive: true });
-});
+  bindAudioUnlock();
+}
 
 function saveProgress() {
   localStorage.setItem('cq_caught', JSON.stringify(Array.from(caught)));
