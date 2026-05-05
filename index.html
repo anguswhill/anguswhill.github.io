@@ -28,20 +28,22 @@
     background: #0e0a18;
     font-family: 'VT323', monospace;
     color: var(--cream);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     -webkit-font-smoothing: none;
     image-rendering: pixelated;
-touch-action: none;
+touch-action: pan-y;
   }
   body {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     min-height: 100vh;
     background:
       radial-gradient(ellipse at top, #2a1f3d 0%, #0e0a18 60%),
       repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
     padding: 12px;
+    overflow-y: auto;
   }
   .frame {
     width: min(560px, 100%);
@@ -54,6 +56,7 @@ touch-action: none;
       0 0 60px rgba(255,90,60,0.15);
     padding: 14px;
     position: relative;
+    margin: 8px auto 20px;
   }
   .titlebar {
     display: flex;
