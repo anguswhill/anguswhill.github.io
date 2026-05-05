@@ -362,6 +362,21 @@ white-space: nowrap;
 }
 .dex-card.uncaught .rarity { color: rgba(255, 245, 220, 0.4); }
 
+
+.lab {
+margin-top: 10px;
+background: var(--cream);
+color: var(--ink);
+border: 3px solid var(--ink);
+padding: 10px;
+}
+.lab h3 { font-family: "Press Start 2P", monospace; font-size: 10px; margin-bottom: 8px; color: var(--accent); }
+.lab-row { display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; }
+#labEditor { width: 192px; height: 192px; border:2px solid var(--ink); image-rendering: pixelated; touch-action:none; background:#fff; }
+.lab-controls { display:flex; flex-direction:column; gap:6px; font-size:18px; }
+.lab-controls select, .lab-controls button { font-family: inherit; font-size:18px; }
+.parts { font-size:16px; line-height:1.1; }
+
 /* Catch animation overlay */
 .flash {
 position: absolute;
@@ -407,6 +422,20 @@ transition: opacity 0.15s;
   </div>
 
 <button class="dexbtn" id="openDex">📖 OPEN CRITTERDEX <span class="count" id="dexCount">(0/7)</span></button>
+<div class="lab" id="bioLab">
+  <h3>BIO LAB EDITOR</h3>
+  <div class="lab-row">
+    <canvas id="labEditor" width="16" height="16"></canvas>
+    <div class="lab-controls">
+      <label>Critter <select id="labCritter"></select></label>
+      <label>Tool <select id="labTool"><option value="draw">Draw</option><option value="erase">Erase</option></select></label>
+      <label>Color <select id="labColor"></select></label>
+      <button class="act" id="labSave" type="button">SAVE EDIT</button>
+      <div class="parts" id="partsInfo"></div>
+    </div>
+  </div>
+</div>
+
 
   <div class="dpad">
     <button class="up"    id="btnUp">▲</button>
@@ -554,6 +583,22 @@ function tickPickups() {
 }
 setInterval(tickPickups, 1000);
 
+
+const PALETTE = ['transparent', '#000000', '#ffffff', '#ff5a3c', '#ffcb47', '#5ec6ff', '#7ed957', '#c95df0'];
+const COLOR_COST = {
+  '#000000': { pigment: 1 }, '#ffffff': { pigment: 1 }, '#ff5a3c': { pigment: 1, ember: 1 },
+  '#ffcb47': { pigment: 1, spark: 1 }, '#5ec6ff': { pigment: 1, aqua: 1 }, '#7ed957': { pigment: 1, leaf: 1 }, '#c95df0': { pigment: 1, spore: 1 }
+};
+let partsInventory = { pigment: 200, ember: 30, spark: 30, aqua: 30, leaf: 30, spore: 30 };
+const critterEdits = {};
+function blankSpriteData(){ return Array.from({length:16},()=>Array(16).fill(0)); }
+function ensureCritterData(name){ if(!critterEdits[name]) critterEdits[name]={ spriteData: blankSpriteData() }; return critterEdits[name]; }
+function saveLabState(){ localStorage.setItem('cq_lab', JSON.stringify({ partsInventory, critterEdits })); }
+function loadLabState(){ try { const d=JSON.parse(localStorage.getItem('cq_lab')||'null'); if(d){ partsInventory={...partsInventory,...d.partsInventory}; Object.assign(critterEdits,d.critterEdits||{});} } catch(e){} }
+function spriteToCanvas(o, data, x=0, y=0, scale=2){
+  for(let yy=0; yy<16; yy++) for(let xx=0; xx<16; xx++) { const idx=data[yy][xx]; if(idx>0){ o.fillStyle=PALETTE[idx]; o.fillRect(x+xx*scale,y+yy*scale,scale,scale); } }
+}
+
 // Sprite cache
 const spriteCache = {};
 function getSprite(name) {
@@ -563,7 +608,8 @@ function getSprite(name) {
   off.width = 32; off.height = 32;
   const o = off.getContext('2d');
   o.imageSmoothingEnabled = false;
-  drawCritter(o, c, 0, 0);
+  const edit = critterEdits[name];
+  if (edit && edit.spriteData) { spriteToCanvas(o, edit.spriteData); } else { drawCritter(o, c, 0, 0); }
   spriteCache[name] = off;
   return off;
 }
@@ -1184,7 +1230,40 @@ function flash() {
   }, 120);
 }
 
+
+function renderPartsInfo() {
+  const el=document.getElementById('partsInfo');
+  el.textContent='Parts: '+Object.entries(partsInventory).map(([k,v])=>`${k}:${v}`).join(' ');
+}
+function setupLab(){
+  loadLabState();
+  const critSel=document.getElementById('labCritter'); const colorSel=document.getElementById('labColor');
+  const toolSel=document.getElementById('labTool'); const cvs=document.getElementById('labEditor'); const lctx=cvs.getContext('2d');
+  lctx.imageSmoothingEnabled=false;
+  CRITTERS.forEach(c=>{ const o=document.createElement('option'); o.value=c.name; o.textContent=c.name; critSel.appendChild(o); });
+  PALETTE.forEach((c,i)=>{ if(i===0)return; const o=document.createElement('option'); o.value=String(i); o.textContent=c; colorSel.appendChild(o); });
+  let painting=false;
+  function activeData(){ return ensureCritterData(critSel.value).spriteData; }
+  function redraw(){ lctx.clearRect(0,0,16,16); const d=activeData(); for(let y=0;y<16;y++)for(let x=0;x<16;x++){ const idx=d[y][x]; lctx.fillStyle=idx?PALETTE[idx]:'#f5f5f5'; lctx.fillRect(x,y,1,1);} }
+  function paint(evt){ const r=cvs.getBoundingClientRect(); const x=Math.floor((evt.clientX-r.left)/r.width*16); const y=Math.floor((evt.clientY-r.top)/r.height*16); if(x<0||x>15||y<0||y>15)return; const d=activeData(); d[y][x]= toolSel.value==='erase'?0:Number(colorSel.value); redraw(); }
+  cvs.addEventListener('pointerdown',e=>{painting=true; paint(e); cvs.setPointerCapture(e.pointerId);});
+  cvs.addEventListener('pointermove',e=>{ if(painting) paint(e);});
+  cvs.addEventListener('pointerup',()=>painting=false); cvs.addEventListener('pointerleave',()=>painting=false);
+  critSel.addEventListener('change',redraw);
+  document.getElementById('labSave').addEventListener('click',()=>{
+    const data=activeData(); const cost={};
+    for(let y=0;y<16;y++)for(let x=0;x<16;x++){ const idx=data[y][x]; if(idx>0){ const cc=COLOR_COST[PALETTE[idx]]||{pigment:1}; for(const [k,v] of Object.entries(cc)) cost[k]=(cost[k]||0)+v; }}
+    for(const [k,v] of Object.entries(cost)){ if((partsInventory[k]||0)<v){ setMsg(`Not enough ${k}. Need ${v}, have ${partsInventory[k]||0}.`); return; } }
+    for(const [k,v] of Object.entries(cost)) partsInventory[k]-=v;
+    spriteCache[critSel.value]=null; saveLabState(); renderPartsInfo(); buildDexGrid(); if(inBattle&&wild&&wild.name===critSel.value){ flash(); }
+    setMsg(`Saved ${critSel.value} sprite. Parts spent: `+Object.entries(cost).map(([k,v])=>`${k}:${v}`).join(', '));
+  });
+  if(!critSel.value && CRITTERS[0]) critSel.value=CRITTERS[0].name;
+  redraw(); renderPartsInfo();
+}
+
 // init
+setupLab();
 updateBalls();
 updateCaught();
 updateParts();
