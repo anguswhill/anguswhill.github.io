@@ -387,6 +387,9 @@ transition: opacity 0.15s;
   <div class="hud">
     <div class="pill"><span class="label">BALLS</span><span class="val" id="balls">10</span></div>
     <div class="pill"><span class="label">CAUGHT</span><span class="val" id="caught">0</span></div>
+    <div class="pill"><span class="label">BIOMATTER</span><span class="val" id="partBiomatter">0</span></div>
+    <div class="pill"><span class="label">SHELL</span><span class="val" id="partShell">0</span></div>
+    <div class="pill"><span class="label">SPARK</span><span class="val" id="partSpark">0</span></div>
   </div>
 
   <div class="msgbox" id="msg">Welcome! Walk into tall grass to find wild critters. Use arrow keys or WASD.</div>
@@ -484,13 +487,13 @@ const player = { x: 1, y: 9, dir: 'up', frame: 0, moving: false };
 
 // Critters — original designs, not Pokemon
 const CRITTERS = [
-  { name: 'BLOBLET',   color: '#7ed957', accent: '#3a8a1f', desc: 'A bouncy plant-blob. Mostly harmless.', rarity: 1 },
-  { name: 'EMBERFOX',  color: '#ff7a3a', accent: '#b03a1a', desc: 'Crackles when curious. Tail glows.',    rarity: 2 },
-  { name: 'PUDDLOPS',  color: '#5ec6ff', accent: '#2a6f9a', desc: 'A one-eyed water sprite. Very polite.', rarity: 2 },
-  { name: 'SHROOMP',   color: '#c95df0', accent: '#6a2a8a', desc: 'Hums softly. Smells like rain.',        rarity: 3 },
-  { name: 'PEBBLOR',   color: '#a08c70', accent: '#5a4a30', desc: 'Heavy. Stubborn. Surprisingly sweet.',  rarity: 3 },
-  { name: 'MOTHWING',  color: '#f0d74a', accent: '#a07a10', desc: 'Drawn to lanterns and bad ideas.',      rarity: 4 },
-  { name: 'GLIMMERAT', color: '#e8e8f0', accent: '#7a7a90', desc: 'Hoards shiny things. Rarely seen.',     rarity: 5 },
+  { name: 'BLOBLET',   color: '#7ed957', accent: '#3a8a1f', desc: 'A bouncy plant-blob. Mostly harmless.', rarity: 1, drops: [{ part: 'biomatter', min: 1, max: 3 }] },
+  { name: 'EMBERFOX',  color: '#ff7a3a', accent: '#b03a1a', desc: 'Crackles when curious. Tail glows.',    rarity: 2, drops: [{ part: 'spark', min: 1, max: 2 }, { part: 'biomatter', min: 1, max: 1 }] },
+  { name: 'PUDDLOPS',  color: '#5ec6ff', accent: '#2a6f9a', desc: 'A one-eyed water sprite. Very polite.', rarity: 2, drops: [{ part: 'biomatter', min: 1, max: 2 }] },
+  { name: 'SHROOMP',   color: '#c95df0', accent: '#6a2a8a', desc: 'Hums softly. Smells like rain.',        rarity: 3, drops: [{ part: 'biomatter', min: 2, max: 3 }] },
+  { name: 'PEBBLOR',   color: '#a08c70', accent: '#5a4a30', desc: 'Heavy. Stubborn. Surprisingly sweet.',  rarity: 3, drops: [{ part: 'shell', min: 1, max: 2 }] },
+  { name: 'MOTHWING',  color: '#f0d74a', accent: '#a07a10', desc: 'Drawn to lanterns and bad ideas.',      rarity: 4, drops: [{ part: 'spark', min: 1, max: 3 }] },
+  { name: 'GLIMMERAT', color: '#e8e8f0', accent: '#7a7a90', desc: 'Hoards shiny things. Rarely seen.',     rarity: 5, drops: [{ part: 'shell', min: 1, max: 1 }, { part: 'spark', min: 1, max: 2 }] },
 ];
 
 // Wild critter (in battle)
@@ -501,6 +504,7 @@ let catchBonus = 0; // baiting/rocks modify this
 let inBattle = false;
 const caught = new Set();
 let balls = 10;
+const parts = { biomatter: 0, shell: 0, spark: 0 };
 
 // Ball pickups scattered on the map. Each respawns ~30s after collection.
 const PICKUP_SPOTS = [
@@ -977,10 +981,10 @@ function updateHP() {
   document.getElementById('hpfill').style.width = (wildHP / wildHPMax * 100) + '%';
 }
 
-function endBattle(catchSuccess) {
+function endBattle(result = 'escaped') {
   inBattle = false;
   document.getElementById('battle').classList.remove('active');
-  if (catchSuccess) {
+  if (result === 'caught') {
     caught.add(wild.name);
     updateDex();
   }
@@ -994,6 +998,33 @@ function setMsg(text) {
 
 function updateBalls() { document.getElementById('balls').textContent = balls; }
 function updateCaught() { document.getElementById('caught').textContent = caught.size; }
+function updateParts() {
+  document.getElementById('partBiomatter').textContent = parts.biomatter;
+  document.getElementById('partShell').textContent = parts.shell;
+  document.getElementById('partSpark').textContent = parts.spark;
+}
+
+function formatPartName(part) {
+  return part[0].toUpperCase() + part.slice(1);
+}
+
+function defeatWild() {
+  if (!wild) return;
+  const rewards = [];
+  for (const drop of (wild.drops || [])) {
+    const qty = drop.min + Math.floor(Math.random() * (drop.max - drop.min + 1));
+    if (qty <= 0) continue;
+    parts[drop.part] += qty;
+    rewards.push(`${qty} ${formatPartName(drop.part)}`);
+  }
+  updateParts();
+  if (rewards.length) {
+    setMsg(`${wild.name} was defeated! Salvaged: ${rewards.join(', ')}.`);
+  } else {
+    setMsg(`${wild.name} was defeated! No salvage this time.`);
+  }
+  endBattle('defeated');
+}
 
 function rarityStars(n) {
   return '★'.repeat(n) + '☆'.repeat(5 - n);
@@ -1092,13 +1123,13 @@ document.getElementById('actThrow').addEventListener('click', () => {
   setTimeout(() => {
     if (Math.random() < chance) {
       setMsg(`Gotcha! ${wild.name} was caught!`);
-      endBattle(true);
+      endBattle('caught');
     } else {
       setMsg(`Oh no! ${wild.name} broke free!`);
       // wild may flee on close calls
       if (Math.random() < 0.15) {
         setMsg(`${wild.name} fled into the grass!`);
-        endBattle(false);
+        endBattle('escaped');
       }
     }
   }, 400);
@@ -1115,14 +1146,18 @@ document.getElementById('actBait').addEventListener('click', () => {
 
 document.getElementById('actRock').addEventListener('click', () => {
   if (!inBattle) return;
-  // rock weakens (lower hp = easier catch) but agitates
-  wildHP = Math.max(2, wildHP - 5);
+  // rock weakens (lower hp = easier catch) but agitates and can defeat
+  wildHP = Math.max(0, wildHP - 5);
   catchBonus = Math.max(-0.1, catchBonus - 0.05);
   updateHP();
+  if (wildHP <= 0) {
+    defeatWild();
+    return;
+  }
   setMsg(`You hurl a rock! ${wild.name} is angry!`);
   if (Math.random() < 0.2) {
     setMsg(`${wild.name} ran off in a huff!`);
-    endBattle(false);
+    endBattle('escaped');
   }
 });
 
@@ -1130,7 +1165,7 @@ document.getElementById('actRun').addEventListener('click', () => {
   if (!inBattle) return;
   if (Math.random() < 0.85) {
     setMsg('Got away safely.');
-    endBattle(false);
+    endBattle('escaped');
   } else {
     setMsg(`Couldn't escape! ${wild.name} is staring you down.`);
   }
@@ -1152,6 +1187,7 @@ function flash() {
 // init
 updateBalls();
 updateCaught();
+updateParts();
 updateDex();
 render();
 
