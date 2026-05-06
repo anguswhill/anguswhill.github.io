@@ -1666,11 +1666,13 @@ function pickWild() {
   return CRITTERS[0];
 }
 
+const CRITTER_HP_SCALE = 0.67; // 33% lower HP so rock harvests take fewer hits
+
 function startEncounter() {
   wild = pickWild();
   playEncounter();
   playCritterNoise(wild);
-  wildHPMax = 20 + wild.rarity * 5;
+  wildHPMax = Math.max(1, Math.round((20 + wild.rarity * 5) * CRITTER_HP_SCALE));
   wildHP = wildHPMax;
   catchBonus = 0;
   inBattle = true;
