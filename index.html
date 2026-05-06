@@ -840,8 +840,11 @@ function playHtmlAudio(freq=440, dur=0.12, vol=0.2, label='html beep') {
 }
 
 function makeBgmDataUri() {
-  const sampleRate = 22050;
-  const dur = 4;
+  const sampleRate = 16000;
+  const beatDur = 0.25;
+  const beatsPerBar = 4;
+  const bars = 64;
+  const dur = beatDur * beatsPerBar * bars;
   const samples = sampleRate * dur;
   const bytesPerSample = 2;
   const dataSize = samples * bytesPerSample;
@@ -864,26 +867,62 @@ function makeBgmDataUri() {
   writeString(36, 'data');
   view.setUint32(40, dataSize, true);
 
-  const arp = [196.00, 246.94, 293.66, 392.00, 369.99, 293.66, 246.94, 196.00];
-  const horn = [659.25, 659.25, 783.99, 880.00, 783.99, 659.25, 587.33, 659.25];
-  const bass = [98.00, 98.00, 130.81, 98.00, 146.83, 146.83, 130.81, 98.00];
-  const step = 0.25;
+  // 64 seconds of chiptune-meets-mariachi backing music. The phrase is split
+  // into sixteen 4-bar sections so the HTML-audio fallback does not restart the
+  // same two-second riff over and over on mobile browsers that block Web Audio.
+  const rootProgression = [196.00, 174.61, 220.00, 146.83, 164.81, 196.00, 130.81, 174.61];
+  const scale = [1, 9/8, 6/5, 4/3, 3/2, 5/3, 9/5, 2];
+  const leadPattern = [0, 2, 4, 7, 6, 4, 2, 1, 0, 3, 5, 7, 9, 7, 5, 3];
+  const counterPattern = [7, 5, 4, 2, 3, 5, 4, 2, 1, 2, 4, 5, 4, 2, 0, 2];
+  const bassPattern = [0, 0, 4, 0, 5, 5, 4, 0, 0, 2, 4, 7, 5, 4, 2, 0];
+  const hornPattern = [7, 7, 9, 11, 9, 7, 6, 7, 4, 5, 7, 9, 11, 9, 7, 5];
   const square = x => Math.sin(x) >= 0 ? 1 : -1;
+  const tri = x => (2 / Math.PI) * Math.asin(Math.sin(x));
   const saw = x => 2 * ((x / (2 * Math.PI)) - Math.floor(0.5 + x / (2 * Math.PI)));
+  const noteFromScale = (root, degree, octave=1) => {
+    const steps = scale.length - 1;
+    const wrapped = ((degree % steps) + steps) % steps;
+    const oct = Math.floor(degree / steps) + (degree < 0 && degree % steps !== 0 ? 1 : 0);
+    return root * scale[wrapped] * Math.pow(2, oct) * octave;
+  };
+
   for (let i = 0; i < samples; i++) {
     const t = i / sampleRate;
-    const beat = Math.floor(t / step);
-    const beatT = t - beat * step;
-    const gate = Math.max(0, 1 - beatT / step);
-    const f1 = arp[beat % arp.length];
-    const f2 = bass[beat % bass.length];
-    const f3 = horn[Math.floor(beat / 2) % horn.length];
-    let sample = square(2 * Math.PI * f1 * t) * 0.10 * gate;
-    if (beat % 2 === 0) sample += square(2 * Math.PI * f2 * t) * 0.13 * gate;
-    if (beat % 8 === 0 || beat % 8 === 3) sample += saw(2 * Math.PI * f3 * t) * 0.08 * gate;
+    const beat = Math.floor(t / beatDur);
+    const beatT = t - beat * beatDur;
+    const bar = Math.floor(beat / beatsPerBar);
+    const section = Math.floor(bar / 4);
+    const root = rootProgression[section % rootProgression.length];
+    const phraseOffset = section % 2 === 0 ? 0 : 2;
+    const leadDegree = leadPattern[(beat + phraseOffset) % leadPattern.length];
+    const counterDegree = counterPattern[(beat + Math.floor(section / 2)) % counterPattern.length];
+    const bassDegree = bassPattern[beat % bassPattern.length];
+    const hornDegree = hornPattern[(Math.floor(beat / 2) + section) % hornPattern.length];
+    const leadFreq = noteFromScale(root, leadDegree, section >= 8 ? 2 : 1.5);
+    const counterFreq = noteFromScale(root, counterDegree, 1);
+    const bassFreq = noteFromScale(root / 2, bassDegree, 1);
+    const hornFreq = noteFromScale(root, hornDegree, 2);
+    const gate = Math.max(0, 1 - beatT / beatDur);
+    const softGate = Math.sin(Math.PI * Math.min(1, beatT / beatDur));
+    let sample = 0;
+
+    sample += square(2 * Math.PI * leadFreq * t) * 0.065 * gate;
+    sample += tri(2 * Math.PI * counterFreq * t) * 0.035 * softGate;
+    if (beat % 2 === 0) sample += square(2 * Math.PI * bassFreq * t) * 0.11 * gate;
+    if ((beat + section) % 8 === 0 || (beat + section) % 8 === 3) {
+      sample += saw(2 * Math.PI * hornFreq * t) * 0.075 * gate;
+      sample += tri(2 * Math.PI * hornFreq * 1.5 * t) * 0.025 * gate;
+    }
     const kickEnv = beatT < 0.08 ? 1 - beatT / 0.08 : 0;
-    if (beat % 4 === 0) sample += Math.sin(2 * Math.PI * 55 * t) * 0.22 * kickEnv;
-    view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, sample)) * 32767, true);
+    if (beat % 4 === 0) sample += Math.sin(2 * Math.PI * 55 * t) * 0.18 * kickEnv;
+    if (beat % 4 === 2) {
+      const hatEnv = beatT < 0.05 ? 1 - beatT / 0.05 : 0;
+      sample += (Math.sin(2 * Math.PI * 3400 * t) > 0 ? 1 : -1) * 0.018 * hatEnv;
+    }
+
+    // A short fade at both ends keeps the 64s loop from clicking when it wraps.
+    const fade = Math.min(1, i / (sampleRate * 0.25), (samples - i) / (sampleRate * 0.25));
+    view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, sample * fade)) * 32767, true);
   }
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -1026,29 +1065,51 @@ function noiseBurst(dur=0.06, vol=0.06, target='sfx', label='noise') {
 function startBgm(){
   const ctx = audioState.ctx;
   if (!ctx || audioState.bgmTimer) return;
-  // Techno-Matrix pulse fused with a tiny mariachi horn line. It keeps looping
-  // after the first user audio gesture so the overworld never falls silent.
-  const matrixArp = [196.00, 246.94, 293.66, 392.00, 369.99, 293.66, 246.94, 196.00];
-  const mariachiHorn = [659.25, 659.25, 783.99, 880.00, 783.99, 659.25, 587.33, 659.25, 523.25, 587.33, 659.25, 783.99, 739.99, 659.25, 587.33, 523.25];
-  const bass = [98.00, 98.00, 130.81, 98.00, 146.83, 146.83, 130.81, 98.00];
-  const stepMs = 150;
+  // Match the HTML fallback with a 64-second melodic phrase before the Web Audio
+  // backing track returns to its first bar. Each timer tick is a sixteenth-note
+  // pulse, while roots and melodic offsets evolve every four bars.
+  const beatMs = 250;
+  const beatsPerBar = 4;
+  const barsPerLoop = 64;
+  const rootProgression = [196.00, 174.61, 220.00, 146.83, 164.81, 196.00, 130.81, 174.61];
+  const scale = [1, 9/8, 6/5, 4/3, 3/2, 5/3, 9/5, 2];
+  const leadPattern = [0, 2, 4, 7, 6, 4, 2, 1, 0, 3, 5, 7, 9, 7, 5, 3];
+  const counterPattern = [7, 5, 4, 2, 3, 5, 4, 2, 1, 2, 4, 5, 4, 2, 0, 2];
+  const bassPattern = [0, 0, 4, 0, 5, 5, 4, 0, 0, 2, 4, 7, 5, 4, 2, 0];
+  const hornPattern = [7, 7, 9, 11, 9, 7, 6, 7, 4, 5, 7, 9, 11, 9, 7, 5];
+  const noteFromScale = (root, degree, octave=1) => {
+    const steps = scale.length - 1;
+    const wrapped = ((degree % steps) + steps) % steps;
+    const oct = Math.floor(degree / steps) + (degree < 0 && degree % steps !== 0 ? 1 : 0);
+    return root * scale[wrapped] * Math.pow(2, oct) * octave;
+  };
+
   audioState.bgmTimer = setInterval(() => {
     if (!audioState.ctx || audioState.ctx.state !== 'running' || audioState.muted || audioState.volume <= 0) return;
-    const i = audioState.bgmStep++;
-    const arp = matrixArp[i % matrixArp.length];
-    const horn = mariachiHorn[i % mariachiHorn.length];
-    tone(arp, 0.09, i % 2 ? 'square' : 'sawtooth', 0.045, 'music', 'matrix arp');
-    if (i % 2 === 0) tone(bass[i % bass.length], 0.13, 'square', 0.055, 'music', 'matrix bass');
-    if (i % 4 === 0) tone(55, 0.08, 'sine', 0.12, 'music', 'techno kick');
-    if (i % 4 === 2) noiseBurst(0.045, 0.035, 'music', 'digital hi-hat');
-    if (i % 8 === 0 || i % 8 === 3) {
-      tone(horn, 0.18, 'sawtooth', 0.075, 'music', 'mariachi trumpet');
-      setTimeout(() => tone(horn * 1.5, 0.08, 'triangle', 0.035, 'music', 'mariachi harmony'), 55);
+    const i = audioState.bgmStep++ % (barsPerLoop * beatsPerBar);
+    const bar = Math.floor(i / beatsPerBar);
+    const section = Math.floor(bar / 4);
+    const root = rootProgression[section % rootProgression.length];
+    const phraseOffset = section % 2 === 0 ? 0 : 2;
+    const leadDegree = leadPattern[(i + phraseOffset) % leadPattern.length];
+    const counterDegree = counterPattern[(i + Math.floor(section / 2)) % counterPattern.length];
+    const bassDegree = bassPattern[i % bassPattern.length];
+    const hornDegree = hornPattern[(Math.floor(i / 2) + section) % hornPattern.length];
+
+    tone(noteFromScale(root, leadDegree, section >= 8 ? 2 : 1.5), 0.13, i % 2 ? 'square' : 'sawtooth', 0.04, 'music', '64s lead');
+    tone(noteFromScale(root, counterDegree, 1), 0.17, 'triangle', 0.025, 'music', '64s counter');
+    if (i % 2 === 0) tone(noteFromScale(root / 2, bassDegree, 1), 0.18, 'square', 0.055, 'music', '64s bass');
+    if (i % 4 === 0) tone(55, 0.08, 'sine', 0.1, 'music', 'techno kick');
+    if (i % 4 === 2) noiseBurst(0.045, 0.025, 'music', 'digital hi-hat');
+    if ((i + section) % 8 === 0 || (i + section) % 8 === 3) {
+      const horn = noteFromScale(root, hornDegree, 2);
+      tone(horn, 0.22, 'sawtooth', 0.065, 'music', 'long mariachi trumpet');
+      setTimeout(() => tone(horn * 1.5, 0.1, 'triangle', 0.025, 'music', 'long mariachi harmony'), 55);
     }
-  }, stepMs);
-  kickBgmNow('bgm');
-  audioState.lastEvent = 'techno mariachi bgm started';
-  updateAudioDebug('bgm');
+  }, beatMs);
+  kickBgmNow('64s bgm');
+  audioState.lastEvent = '64-second musical bgm started';
+  updateAudioDebug('64s bgm');
 }
 
 function playStep(){
