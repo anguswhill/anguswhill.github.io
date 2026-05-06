@@ -675,6 +675,7 @@ const audioState = {
   lastToneAt: 0,
   fallbackCount: 0,
   fallbackError: '',
+  resumePromise: null,
 };
 const audioToggleBtn = document.getElementById('audioToggle');
 const audioVolumeInput = document.getElementById('audioVolume');
@@ -685,6 +686,33 @@ const AUDIO_GESTURE_REASONS = new Set(['pointerdown', 'touchstart', 'keydown', '
 
 function isAudioGestureReason(reason) {
   return AUDIO_GESTURE_REASONS.has(reason);
+}
+
+function requestAudioResume(reason='unlock') {
+  const ctx = audioState.ctx;
+  if (!ctx || ctx.state === 'running') return Promise.resolve(ctx && ctx.state === 'running');
+  if (audioState.resumePromise) return audioState.resumePromise;
+  if (typeof ctx.resume !== 'function') return Promise.resolve(false);
+
+  audioState.resumePromise = ctx.resume()
+    .then(() => {
+      const running = ctx.state === 'running';
+      audioState.lastEvent = running ? 'audio context resumed' : `audio context ${ctx.state}`;
+      audioState.lastError = '';
+      audioState.fallbackError = '';
+      updateAudioDebug(reason);
+      return running;
+    })
+    .catch(err => {
+      audioState.lastError = err && err.message ? err.message : 'resume failed';
+      updateAudioDebug(reason);
+      return false;
+    })
+    .finally(() => {
+      audioState.resumePromise = null;
+    });
+
+  return audioState.resumePromise;
 }
 
 function ensureAudio(reason='unlock') {
@@ -708,21 +736,12 @@ function ensureAudio(reason='unlock') {
     audioState.musicGain.connect(audioState.masterGain);
     audioState.sfxGain.connect(audioState.masterGain);
     audioState.masterGain.connect(audioState.ctx.destination);
+    audioState.ctx.addEventListener('statechange', () => updateAudioDebug('statechange'));
     audioState.lastEvent = 'created audio context';
   }
 
-  if (audioState.ctx.state === 'suspended') {
-    audioState.ctx.resume()
-      .then(() => {
-        audioState.lastEvent = 'audio context resumed';
-        audioState.lastError = '';
-        audioState.fallbackError = '';
-        updateAudioDebug(reason);
-      })
-      .catch(err => {
-        audioState.lastError = err && err.message ? err.message : 'resume failed';
-        updateAudioDebug(reason);
-      });
+  if (audioState.ctx.state !== 'running') {
+    requestAudioResume(reason);
   }
 
   if (!audioState.started) {
@@ -816,8 +835,13 @@ function tone(freq=440,dur=0.12,type='square',vol=0.06,target='sfx', label='tone
   }
   if (ctx.state !== 'running') {
     audioState.lastEvent = `${label}: waiting for audio unlock`;
-    audioState.lastError = 'Tap START SOUND or press a key to enable audio';
+    audioState.lastError = '';
+    requestAudioResume(label).then(running => {
+      if (running) tone(freq, dur, type, vol, target, label);
+      else if (isAudioGestureReason(label)) playHtmlAudio(freq, dur, vol, label);
+    });
     updateAudioDebug(label);
+    if (isAudioGestureReason(label)) return playHtmlAudio(freq, dur, vol, label);
     return false;
   }
   const osc = ctx.createOscillator();
@@ -1005,7 +1029,7 @@ function initAudioPrefs() {
 
   audioToggleBtn.addEventListener('click', () => {
     const wasRunning = !!audioState.ctx && audioState.ctx.state === 'running';
-    ensureAudio();
+    ensureAudio('click');
     if (!wasRunning || audioState.muted || audioState.volume <= 0) {
       if (audioState.volume <= 0) setVolume(0.7);
       setMuted(false);
