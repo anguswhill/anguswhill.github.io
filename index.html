@@ -667,6 +667,7 @@ const audioState = {
   lastCritterAt: 0,
   unlockBound: false,
   bgmTimer: null,
+  bgmStep: 0,
   sfxCount: 0,
   musicCount: 0,
   lastEvent: 'idle',
@@ -825,20 +826,61 @@ function tone(freq=440,dur=0.12,type='square',vol=0.06,target='sfx', label='tone
   return true;
 }
 
+function noiseBurst(dur=0.06, vol=0.06, target='sfx', label='noise') {
+  const ctx = ensureAudio(label);
+  if (audioState.muted || audioState.volume <= 0) return false;
+  if (!ctx || ctx.state !== 'running') return false;
+  const samples = Math.max(1, Math.floor(ctx.sampleRate * dur));
+  const buffer = ctx.createBuffer(1, samples, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < samples; i++) {
+    const fade = 1 - (i / samples);
+    data[i] = (Math.random() * 2 - 1) * fade;
+  }
+  const src = ctx.createBufferSource();
+  const g = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 1200;
+  g.gain.setValueAtTime(vol, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+  src.buffer = buffer;
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(target === 'music' ? audioState.musicGain : audioState.sfxGain);
+  src.start();
+  audioState.lastToneAt = Date.now();
+  if (target === 'music') audioState.musicCount++;
+  else audioState.sfxCount++;
+  audioState.lastEvent = `${label}: noise ${target}`;
+  updateAudioDebug(label);
+  return true;
+}
+
 function startBgm(){
   const ctx = audioState.ctx;
   if (!ctx || audioState.bgmTimer) return;
-  const pattern = [261.63, 329.63, 392.0, 329.63, 293.66, 349.23, 440.0, 349.23];
-  const beat = 0.35;
-  let i = 0;
+  // Techno-Matrix pulse fused with a tiny mariachi horn line. It keeps looping
+  // after the first user audio gesture so the overworld never falls silent.
+  const matrixArp = [196.00, 246.94, 293.66, 392.00, 369.99, 293.66, 246.94, 196.00];
+  const mariachiHorn = [659.25, 659.25, 783.99, 880.00, 783.99, 659.25, 587.33, 659.25, 523.25, 587.33, 659.25, 783.99, 739.99, 659.25, 587.33, 523.25];
+  const bass = [98.00, 98.00, 130.81, 98.00, 146.83, 146.83, 130.81, 98.00];
+  const stepMs = 150;
   audioState.bgmTimer = setInterval(() => {
     if (!audioState.ctx || audioState.ctx.state !== 'running' || audioState.muted || audioState.volume <= 0) return;
-    const f = pattern[i % pattern.length];
-    tone(f, 0.22, 'triangle', 0.08, 'music', 'bgm lead');
-    if (i % 2 === 0) tone(f / 2, 0.16, 'sine', 0.05, 'music', 'bgm bass');
-    i++;
-  }, beat * 1000);
-  audioState.lastEvent = 'bgm timer started';
+    const i = audioState.bgmStep++;
+    const arp = matrixArp[i % matrixArp.length];
+    const horn = mariachiHorn[i % mariachiHorn.length];
+    tone(arp, 0.09, i % 2 ? 'square' : 'sawtooth', 0.045, 'music', 'matrix arp');
+    if (i % 2 === 0) tone(bass[i % bass.length], 0.13, 'square', 0.055, 'music', 'matrix bass');
+    if (i % 4 === 0) tone(55, 0.08, 'sine', 0.12, 'music', 'techno kick');
+    if (i % 4 === 2) noiseBurst(0.045, 0.035, 'music', 'digital hi-hat');
+    if (i % 8 === 0 || i % 8 === 3) {
+      tone(horn, 0.18, 'sawtooth', 0.075, 'music', 'mariachi trumpet');
+      setTimeout(() => tone(horn * 1.5, 0.08, 'triangle', 0.035, 'music', 'mariachi harmony'), 55);
+    }
+  }, stepMs);
+  audioState.lastEvent = 'techno mariachi bgm started';
   updateAudioDebug('bgm');
 }
 
@@ -849,17 +891,38 @@ function playStep(){
   tone(140 + Math.random() * 30, 0.06, 'square', 0.12, 'sfx', 'step');
 }
 
+const CRITTER_VOICES = {
+  BLOBLET:   { base: 185, wave: 'triangle', notes: [1, 1.08, 0.92, 1.16], gap: 70, vol: 0.18 },
+  EMBERFOX:  { base: 440, wave: 'sawtooth', notes: [1, 1.5, 1.2, 1.8], gap: 55, vol: 0.16 },
+  PUDDLOPS:  { base: 260, wave: 'sine',     notes: [1, 0.75, 1.25, 0.9], gap: 85, vol: 0.19 },
+  SHROOMP:   { base: 155, wave: 'triangle', notes: [1, 1, 0.84, 0.84], gap: 120, vol: 0.18 },
+  PEBBLOR:   { base: 115, wave: 'square',   notes: [1, 0.8, 0.66], gap: 95, vol: 0.2 },
+  MOTHWING:  { base: 620, wave: 'sine',     notes: [1, 1.03, 1.07, 1.12, 0.95], gap: 38, vol: 0.13 },
+  GLIMMERAT: { base: 740, wave: 'triangle', notes: [1, 1.25, 1.5, 2], gap: 45, vol: 0.15 },
+  CHILICUA:  { base: 520, wave: 'square',   notes: [1, 1.33, 1.12, 1.66], gap: 48, vol: 0.16 },
+  CACTILLO:  { base: 210, wave: 'square',   notes: [1, 0.72, 1, 0.72], gap: 80, vol: 0.17 },
+  AXOLOTITA: { base: 330, wave: 'sine',     notes: [1, 1.2, 1.5, 1.2, 1.8], gap: 62, vol: 0.16 },
+  ALEBRIJEK: { base: 390, wave: 'sawtooth', notes: [1, 1.41, 1.12, 1.68, 2], gap: 42, vol: 0.15 },
+};
+
 function playClick(){ tone(820, 0.04, 'square', 0.16, 'sfx', 'click'); }
 function playEncounter(){ tone(220, 0.12, 'sawtooth', 0.18, 'sfx', 'encounter 1'); setTimeout(()=>tone(330,0.12,'sawtooth',0.18,'sfx','encounter 2'),90); }
 function playCatch(){ [523.25,659.25,783.99].forEach((f,n)=>setTimeout(()=>tone(f,0.1,'triangle',0.18,'sfx','catch'), n*80)); }
 function playEscape(){ tone(260,0.12,'square',0.14,'sfx','escape 1'); setTimeout(()=>tone(180,0.2,'square',0.1,'sfx','escape 2'),80); }
-function playCritterNoise(){
+function playCritterNoise(critter = wild){
   const now = Date.now();
   if (now - audioState.lastCritterAt < 450) return;
   audioState.lastCritterAt = now;
-  const f = 280 + Math.random() * 280;
-  tone(f, 0.07, 'sawtooth', 0.16, 'sfx', 'critter 1');
-  setTimeout(() => tone(f * 1.2, 0.05, 'square', 0.12, 'sfx', 'critter 2'), 60);
+  const voice = CRITTER_VOICES[critter && critter.name] || { base: 320, wave: 'sawtooth', notes: [1, 1.2], gap: 60, vol: 0.16 };
+  voice.notes.forEach((ratio, n) => {
+    setTimeout(() => {
+      const wobble = 1 + (Math.random() * 0.035 - 0.0175);
+      tone(voice.base * ratio * wobble, 0.075, voice.wave, voice.vol, 'sfx', `${critter ? critter.name : 'critter'} voice`);
+    }, n * voice.gap);
+  });
+  if (critter && (critter.name === 'PEBBLOR' || critter.name === 'CACTILLO')) {
+    setTimeout(() => noiseBurst(0.055, 0.07, 'sfx', `${critter.name} rattle`), voice.gap * 2);
+  }
 }
 
 
@@ -1589,7 +1652,7 @@ function pickWild() {
 function startEncounter() {
   wild = pickWild();
   playEncounter();
-  playCritterNoise();
+  playCritterNoise(wild);
   wildHPMax = 20 + wild.rarity * 5;
   wildHP = wildHPMax;
   catchBonus = 0;
@@ -2070,7 +2133,7 @@ document.getElementById('actThrow').addEventListener('click', () => {
 
 document.getElementById('actBait').addEventListener('click', () => {
   playClick();
-  playCritterNoise();
+  playCritterNoise(wild);
   if (!inBattle) return;
   catchBonus = Math.min(0.4, catchBonus + 0.15);
   // bait calms but slightly heals
@@ -2082,7 +2145,7 @@ document.getElementById('actBait').addEventListener('click', () => {
 document.getElementById('actRock').addEventListener('click', () => {
   playClick();
   tone(170, 0.05, 'square', 0.16, 'sfx', 'rock');
-  playCritterNoise();
+  playCritterNoise(wild);
   if (!inBattle) return;
   // rock weakens (lower hp = easier catch) but agitates and can defeat
   wildHP = Math.max(0, wildHP - 5);
