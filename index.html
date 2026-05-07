@@ -518,7 +518,7 @@ transition: opacity 0.15s;
   </div>
   <button class="dexbtn" id="openLab">🧬 OPEN BIO LAB</button>
 
-<button class="dexbtn" id="openDex">📖 OPEN CRITTERDEX <span class="count" id="dexCount">(0/11)</span></button>
+<button class="dexbtn" id="openDex">📖 OPEN CRITTERDEX <span class="count" id="dexCount">(0/12)</span></button>
 
   <div class="dpad">
     <button class="up"    id="btnUp">▲</button>
@@ -540,7 +540,7 @@ transition: opacity 0.15s;
       <button class="modal-close" id="closeDex">CLOSE</button>
     </div>
     <div class="modal-body">
-      <div class="dex-progress">CAUGHT: <span class="gold" id="dexProgress">0 / 11</span></div>
+      <div class="dex-progress">CAUGHT: <span class="gold" id="dexProgress">0 / 12</span></div>
       <div class="dex-grid" id="dexGrid"></div>
     </div>
   </div>
@@ -639,6 +639,7 @@ const CRITTERS = [
   { name: 'CACTILLO',  color: '#2fa65a', accent: '#d7a23a', desc: 'A cactus armadillo with a sleepy siesta roll.', rarity: 3, drops: [{ part: 'shell', min: 1, max: 2 }, { part: 'biomatter', min: 1, max: 1 }] },
   { name: 'AXOLOTITA', color: '#ff8fbd', accent: '#53b7ff', desc: 'A canal sprite with frilly gills and moonlit eyes.', rarity: 4, drops: [{ part: 'biomatter', min: 2, max: 3 }, { part: 'spark', min: 1, max: 1 }] },
   { name: 'ALEBRIJEK', color: '#21b6c7', accent: '#ff8a1f', desc: 'A painted dream-lizard covered in festival stripes.', rarity: 5, drops: [{ part: 'spark', min: 2, max: 3 }, { part: 'shell', min: 1, max: 1 }] },
+  { name: 'GYARADOS',  color: '#2f7ed8', accent: '#f4d35e', desc: 'A serpentine water dragon whose roar churns the pond.', rarity: 5, drops: [{ part: 'shell', min: 2, max: 3 }, { part: 'spark', min: 1, max: 2 }] },
 ];
 
 // Wild critter (in battle)
@@ -1131,6 +1132,7 @@ const CRITTER_VOICES = {
   CACTILLO:  { base: 210, wave: 'square',   notes: [1, 0.72, 1, 0.72], gap: 80, vol: 0.17 },
   AXOLOTITA: { base: 330, wave: 'sine',     notes: [1, 1.2, 1.5, 1.2, 1.8], gap: 62, vol: 0.16 },
   ALEBRIJEK: { base: 390, wave: 'sawtooth', notes: [1, 1.41, 1.12, 1.68, 2], gap: 42, vol: 0.15 },
+  GYARADOS:  { base: 145, wave: 'sawtooth', notes: [1, 0.75, 1.5, 1.12, 1.9], gap: 68, vol: 0.18 },
 };
 
 function playClick(){ tone(820, 0.04, 'square', 0.16, 'sfx', 'click'); }
@@ -1698,6 +1700,43 @@ function drawCritter(o, c, x, y) {
     o.fillRect(x+14,y+13,1,1); o.fillRect(x+19,y+13,1,1);
     o.fillStyle = '#ff4fd8';
     o.fillRect(x+9,y+18,1,1); o.fillRect(x+18,y+18,1,1); o.fillRect(x+24,y+17,1,1);
+  } else if (c.name === 'GYARADOS') {
+    // coiled sea-dragon silhouette inspired by a fierce river serpent
+    o.fillStyle = col;
+    o.fillRect(x+8,y+18,18,5);
+    o.fillRect(x+6,y+20,5,5);
+    o.fillRect(x+20,y+14,5,6);
+    o.fillRect(x+23,y+10,6,6);
+    o.fillRect(x+25,y+8,3,2);
+    // lighter belly plates
+    o.fillStyle = '#9fd6ff';
+    o.fillRect(x+10,y+20,4,2);
+    o.fillRect(x+15,y+19,4,2);
+    o.fillRect(x+21,y+16,3,2);
+    // crest and whiskers
+    o.fillStyle = ac;
+    o.fillRect(x+24,y+6,2,3);
+    o.fillRect(x+27,y+6,2,3);
+    o.fillRect(x+19,y+11,4,1);
+    o.fillRect(x+28,y+14,3,1);
+    // tail fin
+    o.fillStyle = '#ffffff';
+    o.fillRect(x+4,y+17,4,2);
+    o.fillRect(x+3,y+19,3,2);
+    o.fillRect(x+4,y+21,4,2);
+    // open mouth and eye
+    o.fillStyle = '#fff5dc';
+    o.fillRect(x+25,y+13,4,2);
+    o.fillStyle = '#b51f2a';
+    o.fillRect(x+25,y+15,3,2);
+    o.fillStyle = '#fff';
+    o.fillRect(x+24,y+11,2,2);
+    o.fillStyle = '#000';
+    o.fillRect(x+25,y+12,1,1);
+    // fins
+    o.fillStyle = '#d8efff';
+    o.fillRect(x+11,y+15,4,3);
+    o.fillRect(x+17,y+23,5,2);
   }
 
   drawMexicanHat(o, x, y);
